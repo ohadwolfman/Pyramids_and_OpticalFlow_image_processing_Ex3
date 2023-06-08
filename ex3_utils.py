@@ -1,6 +1,5 @@
 import sys
 from typing import List
-
 import numpy as np
 import cv2
 from numpy.linalg import LinAlgError
@@ -28,36 +27,59 @@ def opticalFlow(im1: np.ndarray, im2: np.ndarray, step_size=10, win_size=5) -> (
     :param win_size: The optical flow window size (odd number!)
     :return: Original points [[x,y]...], [[dU,dV]...] for each points
     """
+    # Luckas kanade:
+    # The function f(x+u, y+u) we want is equivalent to: f(x,y) + (df/dx)*u + (df/dy)*v
+    # We need to find the u,v that minimizes:
+    # E(u,v) = Sigma((I1 + Ix*u + Iy*v) - I2)^2
+    #        = Sigma(It + Ix*u + Iy*v)^2     'I' is the gradient
+    #   I1 is f(x,y),   Ix is (df/dx),   Iy is (df/dy) -I2
+
     # Convert images to float64 data type
     im1 = im1.astype(np.float64)
     im2 = im2.astype(np.float64)
-
     rows, cols = im1.shape
     half_win = win_size // 2
+
+    # The kernel for derivative axes
+    deriv = np.array([[-1,0,1]])
+
+    # Calculating the gradients
+    Ix = cv2.filter2D(im2, -1, deriv, borderType=cv2.BORDER_REPLICATE)
+    Iy = cv2.filter2D(im2, -1, deriv.T, borderType=cv2.BORDER_REPLICATE)
+    It = im2 - im1
+
+    # We want to minimize this: (It + Ix*u + Iy*v)
+    # => It + Ix*u + Iy*v = 0 =>  Ix*u + Iy*v = -It
+    #    | Ix[1]   Iy[1]  |              | It[1] |
+    # => | ...     ...    | * | u | =  -   ...          => Av = b
+    #    | Ix[n]   Iy[n]] |   | v |      | It[n] |
+
+    # [u v] = (A.T * A)^-1 * A.T * b
     points = []  # List to store original points
     deltas = []  # List to store displacement vectors (dU, dV)
 
     # Iterate over the image with the given step size
-    for x in range(half_win, rows - half_win, step_size):
-        for y in range(half_win, cols - half_win, step_size):
+    for x in range(half_win, rows - half_win + 1, step_size):
+        for y in range(half_win, cols - half_win + 1, step_size):
             # Extract the window from both images
-            window1 = im1[x - half_win: x + half_win + 1, y - half_win: y + half_win + 1]
-            window2 = im2[x - half_win: x + half_win + 1, y - half_win: y + half_win + 1]
-
-            # Compute gradients using Sobel operators
-            I_x = cv2.Sobel(src=window1, ddepth=cv2.CV_64F, dx=1, dy=0, ksize=3)  # gradient x
-            I_y = cv2.Sobel(src=window1, ddepth=cv2.CV_64F, dx=0, dy=1, ksize=3)  # gradient y
+            window1 = Ix[x - half_win: x + half_win + 1, y - half_win: y + half_win + 1]
+            window2 = Iy[x - half_win: x + half_win + 1, y - half_win: y + half_win + 1]
+            window3 = It[x - half_win: x + half_win + 1, y - half_win: y + half_win + 1]
 
             # Stack gradients to form the matrix A and compute the vector b
-            A = np.column_stack((I_x.flatten(), I_y.flatten()))
-            b = (window1 - window2).flatten()
+            A = np.vstack((window1.flatten(), window2.flatten())).T  # A = [Ix, Iy]
+            AT_A = np.dot(A.T, A)
 
-            # Solve the linear system using least squares
-            flow_vector, _, _, _ = np.linalg.lstsq(A, b, rcond=None)
+            eigen_values = np.linalg.eigvals(AT_A)
+            if eigen_values.min() <= 1 or eigen_values.max() / eigen_values.min() >= 100:
+                continue
+
+            AT_b = np.dot(A.T, (-1 * window3.flatten()).T).reshape(2, 1)
+            u_v = np.dot(np.linalg.inv(AT_A), AT_b)
 
             # Append the original point and the displacement vector to the lists
-            points.append([y, x])
-            deltas.append([flow_vector[0], flow_vector[1]])
+            points.append([y,x])
+            deltas.append([u_v[0], u_v[1]])
 
     # Convert lists to numpy arrays and return
     return np.array(points), np.array(deltas)
@@ -74,28 +96,39 @@ def opticalFlowPyrLK(img1: np.ndarray, img2: np.ndarray, k: int,
     :return: A 3d array, with a shape of (m, n, 2),
     where the first channel holds U, and the second V.
     """
-    # Convert images to grayscale
-    gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
-    gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+    # Generate 2 lists of gaussian pyramids to img1 and img2
+    # The reverse is for the for loop below, the pyramids list go from bigger to smaller, and we want the opposite
+    pyramids1 = gaussianPyr(img1, k).reverse()
+    pyramids2 = gaussianPyr(img2, k).reverse()
 
-    # Define parameters for the Lucas-Kanade optical flow algorithm
-    lk_params = dict(winSize=(winSize, winSize),
-                     maxLevel=k,
-                     criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+    # Generate the optical flow of the 2 smallest images
+    points, deltas = opticalFlow(pyramids1[-1], pyramids2[-1], stepSize, winSize)
 
-    # Create an array to store the optical flow vectors
-    flow_vectors = np.zeros((img1.shape[0], img1.shape[1], 2), dtype=np.float32)
+    # Increasing to the largest image
+    for curr_img in range(1, k):
+        curr_points, curr_deltas = opticalFlow(pyramids1[curr_img], pyramids2[curr_img], stepSize, winSize)
 
-    # Create a grid of points using the step size
-    points = np.mgrid[0:gray1.shape[0]:stepSize, 0:gray1.shape[1]:stepSize].T.reshape(-1, 1, 2).astype(np.float32)
+        # Fixing the values of points, deltas to one larger image: 2*(u v)
+        points *= 2
+        deltas *= 2
 
-    # Compute the optical flow for each point
-    new_points, status, _ = cv2.calcOpticalFlowPyrLK(gray1, gray2, points, None, **lk_params)
+        for pixel, u_v in zip(curr_points, curr_deltas):
+            if pixel not in points:
+                points.append(pixel)
+                deltas.append(u_v)
+            else:
+                deltas[points.index(pixel)][0] += u_v[0]
+                deltas[points.index(pixel)][1] += u_v[1]
 
-    # Update the flow vectors with the computed displacements
-    flow_vectors[points[:, 0, 1].astype(int), points[:, 0, 0].astype(int)] = new_points[:, 0, :] - points[:, 0, :]
-
-    return flow_vectors
+    # Creating an array for the final result with (m, n, 2) shape
+    ans = np.zeros(shape=(img1.shape[0], img1.shape[1], 2))
+    # reshape to 3D array (X, Y, 2)
+    for index in range(len(points)):
+        px = points[index][1]
+        py = points[index][0]
+        ans[px][py][0] = deltas[index][0]
+        ans[px][py][1] = deltas[index][1]
+    return ans
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +196,12 @@ def gaussianPyr(img: np.ndarray, levels: int = 4) -> List[np.ndarray]:
     :param levels: Pyramid depth
     :return: Gaussian pyramid (list of images)
     """
-    pass
+    gaussianPyrList = []
+    for i in range(levels):
+        lower_reso = cv2.pyrDown(img)
+        img = lower_reso
+        gaussianPyrList.append(img)
+    return gaussianPyrList
 
 
 def laplaceianReduce(img: np.ndarray, levels: int = 4) -> List[np.ndarray]:

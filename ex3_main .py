@@ -16,6 +16,13 @@ def lkDemo(img_path):
                   [0, 1, -.1],
                   [0, 0, 1]], dtype=np.float64)
     img_2 = cv2.warpPerspective(img_1, t, img_1.shape[::-1])
+
+    # f, ax = plt.subplots(1, 2)
+    # ax[0].set_title("im1")
+    # ax[1].set_title("im2")
+    # ax[0].imshow(img_1)
+    # ax[1].imshow(img_2)
+    # plt.show()
     st = time.time()
     pts, uv = opticalFlow(img_1.astype(np.float64), img_2.astype(np.float64), step_size=20, win_size=5)
     et = time.time()
@@ -147,7 +154,7 @@ def main():
 
     img_path = 'input/boxMan.jpg'
     lkDemo(img_path)
-    hierarchicalkDemo(img_path)
+    # hierarchicalkDemo(img_path)
     # compareLK(img_path)
     #
     # imageWarpingDemo(img_path)
