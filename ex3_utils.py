@@ -144,17 +144,37 @@ def opticalFlowPyrLK(img1: np.ndarray, img2: np.ndarray, k: int,
     for index in range(len(points)):
         px = points[index][1]
         py = points[index][0]
-        # if 0 <= px < ans.shape[0] and 0 <= py < ans.shape[1]:
-        #     ans[px, py, 0] = deltas[index][0]
-        #     ans[px, py, 1] = deltas[index][1]
-        ans[px][py][0] = deltas[index][0]
-        ans[px][py][1] = deltas[index][1]
+        if 0 <= px < ans.shape[0] and 0 <= py < ans.shape[1]:
+            ans[px, py, 0] = deltas[index][0]
+            ans[px, py, 1] = deltas[index][1]
     return ans
 
 
 # ---------------------------------------------------------------------------
 # ------------------------ Image Alignment & Warping ------------------------
 # ---------------------------------------------------------------------------
+def opticalFlowCV2(im1: np.ndarray, im2: np.ndarray, block_size=11,
+                max_corners=5000, quality_level=0.00001, min_distance=1) -> (np.ndarray, np.ndarray):
+    """
+    Calculates the optical flow between two images using the Lucas-Kanade method.
+    :param im1: First image
+    :param im2: Second image
+    :param block_size: Size of the block for corner detection
+    :param max_corners: Maximum number of corners to detect
+    :param quality_level: Minimum accepted quality of corners
+    :param min_distance: Minimum distance between corners
+    :return: Optical flow movements and the best detected corner points
+    """
+    im1 = im1.astype('uint8')
+    im2 = im2.astype('uint8')
+
+    # Use the goodFeaturesToTrack function to find the best corner points
+    corners = cv2.goodFeaturesToTrack(im1, max_corners, quality_level, min_distance, blockSize=block_size)
+
+    # Calculate optical flow using the calcOpticalFlowPyrLK function
+    movements, _ = cv2.calcOpticalFlowPyrLK(im1, im2, corners, None)
+
+    return movements, corners
 
 
 def findTranslationLK(im1: np.ndarray, im2: np.ndarray) -> np.ndarray:
@@ -163,7 +183,17 @@ def findTranslationLK(im1: np.ndarray, im2: np.ndarray) -> np.ndarray:
     :param im2: image 1 after Translation.
     :return: Translation matrix by LK.
     """
-    pass
+    movements, _ = opticalFlowCV2(im1, im2)  # Calculate optical flow using the simplified function
+
+    # Compute the mean of optical flow movements to obtain the translation vector
+    mean_movement = np.mean(movements, axis=0)
+
+    # Construct the translation matrix
+    translation_matrix = np.array([[1, 0, mean_movement[0]],
+                                   [0, 1, mean_movement[1]],
+                                   [0, 0, 1]])
+
+    return translation_matrix
 
 
 def findRigidLK(im1: np.ndarray, im2: np.ndarray) -> np.ndarray:
