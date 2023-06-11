@@ -96,36 +96,57 @@ def opticalFlowPyrLK(img1: np.ndarray, img2: np.ndarray, k: int,
     :return: A 3d array, with a shape of (m, n, 2),
     where the first channel holds U, and the second V.
     """
+    # if the image is RGB -> convert to gray
+    if len(img1.shape) > 2:
+        img1 = cv2.cvtColor(img1, cv2.COLOR_RGB2GRAY)
+    if len(img2.shape) > 2:
+        img2 = cv2.cvtColor(img2, cv2.COLOR_RGB2GRAY)
+
+    # If the images have different shapes
+    if img1.shape != img2.shape:
+        raise Exception("The images must be in the same size")
+
     # Generate 2 lists of gaussian pyramids to img1 and img2
     # The reverse is for the for loop below, the pyramids list go from bigger to smaller, and we want the opposite
-    pyramids1 = gaussianPyr(img1, k).reverse()
-    pyramids2 = gaussianPyr(img2, k).reverse()
+    pyramids1 = (gaussianPyr(img1, k))
+    pyramids1.reverse()
+    pyramids2 = gaussianPyr(img2, k)
+    pyramids2.reverse()
 
     # Generate the optical flow of the 2 smallest images
-    points, deltas = opticalFlow(pyramids1[-1], pyramids2[-1], stepSize, winSize)
+    points, deltas = opticalFlow(pyramids1[0], pyramids2[0], stepSize, winSize)
 
     # Increasing to the largest image
     for curr_img in range(1, k):
         curr_points, curr_deltas = opticalFlow(pyramids1[curr_img], pyramids2[curr_img], stepSize, winSize)
 
         # Fixing the values of points, deltas to one larger image: 2*(u v)
-        points *= 2
-        deltas *= 2
+        for j in range(len(points)):
+            points[j] = [element * 2 for element in points[j]]
+            deltas[j] = [element * 2 for element in deltas[j]]
 
         for pixel, u_v in zip(curr_points, curr_deltas):
             if pixel not in points:
-                points.append(pixel)
-                deltas.append(u_v)
+                points = np.vstack([points, pixel])  # 'vstack' is similar to concat
+                deltas = np.concatenate([deltas, np.expand_dims(u_v, axis=0)], axis=0)
+
             else:
-                deltas[points.index(pixel)][0] += u_v[0]
-                deltas[points.index(pixel)][1] += u_v[1]
+                # Add the current vector u_v to the existing vector for the pixel
+                idx = np.where((points[:, 0] == pixel[0]) & (points[:, 1] == pixel[1]))[0]
+                if len(idx) > 0:
+                    idx = idx[0]
+                    # Add the current vector u_v to the existing vector for the pixel
+                    deltas[idx] += u_v
 
     # Creating an array for the final result with (m, n, 2) shape
-    ans = np.zeros(shape=(img1.shape[0], img1.shape[1], 2))
-    # reshape to 3D array (X, Y, 2)
+    ans = np.zeros((img1.shape[0], img1.shape[1], 2))
+
     for index in range(len(points)):
         px = points[index][1]
         py = points[index][0]
+        # if 0 <= px < ans.shape[0] and 0 <= py < ans.shape[1]:
+        #     ans[px, py, 0] = deltas[index][0]
+        #     ans[px, py, 1] = deltas[index][1]
         ans[px][py][0] = deltas[index][0]
         ans[px][py][1] = deltas[index][1]
     return ans
@@ -196,11 +217,10 @@ def gaussianPyr(img: np.ndarray, levels: int = 4) -> List[np.ndarray]:
     :param levels: Pyramid depth
     :return: Gaussian pyramid (list of images)
     """
-    gaussianPyrList = []
-    for i in range(levels):
-        lower_reso = cv2.pyrDown(img)
-        img = lower_reso
-        gaussianPyrList.append(img)
+    gaussianPyrList = [img]
+    for i in range(0, levels):
+        lower_img = cv2.pyrDown(gaussianPyrList[i - 1])
+        gaussianPyrList.append(lower_img)
     return gaussianPyrList
 
 

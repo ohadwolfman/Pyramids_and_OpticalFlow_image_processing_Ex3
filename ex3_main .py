@@ -17,12 +17,15 @@ def lkDemo(img_path):
                   [0, 0, 1]], dtype=np.float64)
     img_2 = cv2.warpPerspective(img_1, t, img_1.shape[::-1])
 
+    # -------- If you want to see the 2 images side by side -------------
     # f, ax = plt.subplots(1, 2)
     # ax[0].set_title("im1")
     # ax[1].set_title("im2")
     # ax[0].imshow(img_1)
     # ax[1].imshow(img_2)
     # plt.show()
+    # -------------------------------------------------------------------
+
     st = time.time()
     pts, uv = opticalFlow(img_1.astype(np.float64), img_2.astype(np.float64), step_size=20, win_size=5)
     et = time.time()
@@ -41,8 +44,34 @@ def hierarchicalkDemo(img_path):
     :return:
     """
     print("Hierarchical LK Demo")
+    img_1 = cv2.imread(img_path)
+    img_1 = cv2.resize(img_1, (0, 0), fx=.5, fy=0.5)
+    t = np.array([[1, 0, -40],
+                  [0, 1, -10],
+                  [0, 0, 1]], dtype=np.float64)
+    img_2 = cv2.warpPerspective(src=img_1, M=t, dsize=(img_1.shape[1], img_1.shape[0]))
 
-    pass
+    st = time.time()
+    uv_hierarchical = opticalFlowPyrLK(img_1, img_2, k=3, stepSize=20, winSize=5)
+    et = time.time()
+
+    pts = np.array([])
+    deltas = np.array([])
+    for i in range(uv_hierarchical.shape[0]):
+        for j in range(uv_hierarchical.shape[1]):
+            if uv_hierarchical[i][j][1] != 0 and uv_hierarchical[i][j][0] != 0:
+                deltas = np.append(deltas, uv_hierarchical[i][j][0])
+                deltas = np.append(deltas, uv_hierarchical[i][j][1])
+                pts = np.append(pts, j)
+                pts = np.append(pts, i)
+    pts = pts.reshape(int(pts.shape[0] / 2), 2)
+    deltas = deltas.reshape(int(deltas.shape[0] / 2), 2)
+
+    print("LK hierarchical:")
+    print("Time: {:.4f}".format(et - st))
+    print("Median:", np.median(uv_hierarchical.reshape(-1, 2), 0))
+    print("Mean:", np.mean(uv_hierarchical.reshape(-1, 2), 0))
+    displayOpticalFlow(img_2, pts, deltas)
 
 
 def compareLK(img_path):
@@ -153,8 +182,8 @@ def main():
     print("ID:", myID())
 
     img_path = 'input/boxMan.jpg'
-    lkDemo(img_path)
-    # hierarchicalkDemo(img_path)
+    # lkDemo(img_path)
+    hierarchicalkDemo(img_path)
     # compareLK(img_path)
     #
     # imageWarpingDemo(img_path)
