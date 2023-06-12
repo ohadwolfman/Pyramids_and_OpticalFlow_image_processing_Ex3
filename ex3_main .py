@@ -16,7 +16,7 @@ def lkDemo(img_path):
     img_1 = cv2.resize(img_1, (0, 0), fx=.5, fy=0.5)
     t = np.array([[1, 0, -.2],
                   [0, 1, -.1],
-                  [0, 0, 1]], dtype=np.float)
+                  [0, 0, 1]], dtype=np.float64)
     img_2 = cv2.warpPerspective(img_1, t, img_1.shape[::-1])
 
     # -------- If you want to see the 2 images side by side -------------
@@ -29,7 +29,7 @@ def lkDemo(img_path):
     # -------------------------------------------------------------------
 
     st = time.time()
-    pts, uv = opticalFlow(img_1.astype(np.float), img_2.astype(np.float), step_size=20, win_size=5)
+    pts, uv = opticalFlow(img_1.astype(np.float64), img_2.astype(np.float64), step_size=20, win_size=5)
     et = time.time()
 
     print("Time: {:.4f}".format(et - st))
@@ -204,8 +204,8 @@ def main():
     print("ID:", myID())
 
     img_path = 'input/boxMan.jpg'
-    # lkDemo(img_path)
-    # hierarchicalkDemo(img_path)
+    lkDemo(img_path)
+    hierarchicalkDemo(img_path)
     compareLK(img_path)
 
     # imageWarpingDemo(img_path)

@@ -202,6 +202,7 @@ def findRigidLK(im1: np.ndarray, im2: np.ndarray) -> np.ndarray:
     :param im2: image 1 after Rigid.
     :return: Rigid matrix by LK.
     """
+    global img_2, best
     feature_params = dict(maxCorners=100, qualityLevel=0.3, minDistance=7, blockSize=7)
     good_features = cv2.goodFeaturesToTrack(im1, mask=None, **feature_params)
     im1 = im1.astype('uint8')
@@ -370,14 +371,17 @@ def laplaceianExpand(lap_pyr: List[np.ndarray]) -> np.ndarray:
     :param lap_pyr: Laplacian Pyramid
     :return: Original image
     """
-    # add last image to answer
+    # Start with the last image in the laplacian pyramid
     answer = lap_pyr[-1]
 
-    # add images to answer
-    for img in range(len(lap_pyr) - 1, 0, -1):
-        answer = cv2.pyrUp(answer)
-        answer = answer + lap_pyr[img - 1]
+    # Add images to restore the original image
+    for img in range(len(lap_pyr) - 2, -1, -1):
+        expanded_img = cv2.pyrUp(answer)  # Upsample the previous image
+        expanded_img = cv2.resize(expanded_img, lap_pyr[img].shape[:2][::-1])  # Resize to match current image size
+        answer = expanded_img + lap_pyr[img]  # Add the current laplacian image
 
+    # Normalize pixel values to [0, 1]
+    answer = cv2.normalize(answer, None, 0, 1, cv2.NORM_MINMAX)
     return answer
 
 
