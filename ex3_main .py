@@ -54,7 +54,7 @@ def hierarchicalkDemo(img_path):
     img_2 = cv2.warpPerspective(src=img_1, M=t, dsize=img_1.shape[::-1])
 
     st = time.time()
-    uv_hierarchical = opticalFlowPyrLK(img_1, img_2, k=3, stepSize=20, winSize=50)
+    uv_hierarchical = opticalFlowPyrLK(img_1, img_2, k=3, stepSize=20, winSize=5)
     et = time.time()
 
     pts = np.array([])
@@ -104,7 +104,29 @@ def displayOpticalFlow(img: np.ndarray, pts: np.ndarray, uvs: np.ndarray):
 # ---------------------------------------------------------------------------
 # ------------------------ Image Alignment & Warping ------------------------
 # ---------------------------------------------------------------------------
+def translationlkdemo(image_path: str):
+    """
+    Runs the translation alignment demo using the Lucas-Kanade method.
+    :param image_path: Path to the input image.
+    """
+    # Load the input image
+    im1 = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
 
+    # Apply a known translation to generate im2
+    translation_matrix = np.array([[1, 0, 50], [0, 1, 20], [0, 0, 1]])
+    im2 = cv2.warpPerspective(im1, translation_matrix, (im1.shape[1], im1.shape[0]))
+
+    # Find the translation parameters using Lucas-Kanade method
+    T = findTranslationLK(im1, im2)
+
+    # Warp image 2 according to the obtained transformation matrix
+    im2_warped = warpImages(im1, im2, T)
+
+    # Display both images
+    cv2.imshow("Image 1", im1)
+    cv2.imshow("Warped Image 2", im2_warped)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
 def imageWarpingDemo(img_path):
     """
@@ -117,7 +139,7 @@ def imageWarpingDemo(img_path):
     img_path = cv2.resize(img_path, (0, 0), fx=.5, fy=0.5)
     t = np.array([[0.3, 0, 0],
                   [0, 0.3, 0],
-                  [0, 0, 1]], dtype=np.float)
+                  [0, 0, 1]], dtype=np.float64)
     img_2 = cv2.warpPerspective(img_path, t, img_path.shape[::-1])
     my_function = warpImages(img_path, img_2, t)
 
@@ -207,8 +229,9 @@ def main():
     lkDemo(img_path)
     hierarchicalkDemo(img_path)
     compareLK(img_path)
-
-    # imageWarpingDemo(img_path)
+    # translationlkdemo('input/sunset.jpg')
+    # rigidlkdemo('input/sunset.jpg')
+    imageWarpingDemo(img_path)
 
     pyrGaussianDemo('input/pyr_bit.jpg')
     pyrLaplacianDemo('input/pyr_bit.jpg')
