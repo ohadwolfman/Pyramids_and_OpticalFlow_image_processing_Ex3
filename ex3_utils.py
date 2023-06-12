@@ -202,7 +202,43 @@ def findRigidLK(im1: np.ndarray, im2: np.ndarray) -> np.ndarray:
     :param im2: image 1 after Rigid.
     :return: Rigid matrix by LK.
     """
-    pass
+    feature_params = dict(maxCorners=100, qualityLevel=0.3, minDistance=7, blockSize=7)
+    good_features = cv2.goodFeaturesToTrack(im1, mask=None, **feature_params)
+    im1 = im1.astype('uint8')
+    im2 = im2.astype('uint8')
+
+    # find optical flow
+    cv_lk_pyr = cv2.calcOpticalFlowPyrLK(im1, im2, good_features, None)[0]
+    directions = cv_lk_pyr - good_features
+    curr_mse = np.inf
+
+    # go over directions in u,v
+    for i in range(len(directions)):
+        u = directions[i, 0, 0]
+        v = directions[i, 0, 1]
+        # find angle
+        if u == 0:
+            angle = 0
+        else:
+            angle = np.arctan(v / u)
+        # create matrix
+        matrix = np.array([[np.cos(angle), -np.sin(angle), 0],
+                           [np.sin(angle), np.cos(angle), 0],
+                           [0, 0, 1]], dtype=float)
+        # warp
+        img_2 = cv2.warpPerspective(im1, matrix, im1.shape[::-1])
+        # calculate mse, keep image that gives best result
+        mse = np.square(im1 - img_2).mean()
+        if mse < curr_mse:
+            best = img_2
+            curr_mse = mse
+    # find lk translation for image we kept and img2
+    translated = findTranslationLK(best, im2)
+
+    # the answer is the translation @ rotation
+    answer = translated @ img_2
+
+    return answer
 
 
 def findTranslationCorr(im1: np.ndarray, im2: np.ndarray) -> np.ndarray:
@@ -211,7 +247,21 @@ def findTranslationCorr(im1: np.ndarray, im2: np.ndarray) -> np.ndarray:
     :param im2: image 1 after Translation.
     :return: Translation matrix by correlation.
     """
-    pass
+    # Perform 2D cross-correlation between the images
+    correlation = np.fft.fftshift(np.fft.ifft2(np.fft.fft2(im1) * np.conj(np.fft.fft2(im2))))
+
+    # Find the peak correlation location
+    peak_loc = np.unravel_index(np.argmax(correlation), correlation.shape)
+
+    # Compute the translation vector
+    translation_vector = np.array([peak_loc[1] - im1.shape[1] / 2, peak_loc[0] - im1.shape[0] / 2])
+
+    # Construct the translation matrix
+    translation_matrix = np.array([[1, 0, translation_vector[0]],
+                                   [0, 1, translation_vector[1]],
+                                   [0, 0, 1]])
+
+    return translation_matrix
 
 
 def findRigidCorr(im1: np.ndarray, im2: np.ndarray) -> np.ndarray:
@@ -220,7 +270,24 @@ def findRigidCorr(im1: np.ndarray, im2: np.ndarray) -> np.ndarray:
     :param im2: image 1 after Rigid.
     :return: Rigid matrix by correlation.
     """
-    pass
+    # Perform 2D cross-correlation between the images
+    correlation = np.fft.fftshift(np.fft.ifft2(np.fft.fft2(im1) * np.conj(np.fft.fft2(im2))))
+
+    # Find the peak correlation location
+    peak_loc = np.unravel_index(np.argmax(correlation), correlation.shape)
+
+    # Compute the translation vector
+    translation_vector = np.array([peak_loc[1] - im1.shape[1] / 2, peak_loc[0] - im1.shape[0] / 2])
+
+    # Compute the rotation angle
+    angle = np.angle(correlation[peak_loc])
+
+    # Construct the rigid matrix
+    rigid_matrix = np.array([[np.cos(angle), -np.sin(angle), translation_vector[0]],
+                             [np.sin(angle), np.cos(angle), translation_vector[1]],
+                             [0, 0, 1]])
+
+    return rigid_matrix
 
 
 def warpImages(im1: np.ndarray, im2: np.ndarray, T: np.ndarray) -> np.ndarray:
@@ -232,7 +299,27 @@ def warpImages(im1: np.ndarray, im2: np.ndarray, T: np.ndarray) -> np.ndarray:
     :return: warp image 2 according to T and display both image1
     and the wrapped version of the image2 in the same figure.
     """
-    pass
+    # find T inverse
+    inverse = np.linalg.inv(T)
+
+    # create answer array
+    answer = np.zeros_like(im1)
+
+    for i in range(im2.shape[0]):
+        for j in range(im2.shape[1]):
+            a = np.array([i, j, 1])
+            b = inverse.dot(a)
+            x = int(b[0])
+            y = int(b[1])
+            if 0 <= x < im1.shape[0] and 0 <= y < im1.shape[1]:
+                answer[i][j] = im1[x][y]
+
+    # calculate mse
+    mse = np.square(im1 - answer).mean()
+
+    print("MSE: ", mse)
+
+    return answer
 
 
 # ---------------------------------------------------------------------------
@@ -247,11 +334,13 @@ def gaussianPyr(img: np.ndarray, levels: int = 4) -> List[np.ndarray]:
     :param levels: Pyramid depth
     :return: Gaussian pyramid (list of images)
     """
-    gaussianPyrList = [img]
-    for i in range(0, levels):
-        lower_img = cv2.pyrDown(gaussianPyrList[i - 1])
-        gaussianPyrList.append(lower_img)
-    return gaussianPyrList
+    pyramid = [img]  # List to store pyramid levels
+
+    for _ in range(levels - 1):
+        img = cv2.pyrDown(img)  # Downsample the image
+        pyramid.append(img)
+
+    return pyramid
 
 
 def laplaceianReduce(img: np.ndarray, levels: int = 4) -> List[np.ndarray]:
@@ -261,7 +350,18 @@ def laplaceianReduce(img: np.ndarray, levels: int = 4) -> List[np.ndarray]:
     :param levels: Pyramid depth
     :return: Laplacian Pyramid (list of images)
     """
-    pass
+    # create answer array
+    answer = []
+
+    # find gaussian pyramid
+    img_list = gaussianPyr(img, levels)
+
+    # add images to answer
+    for i in range(levels):
+        curr = img_list[i]
+        answer.append(curr - cv2.blur(curr, (5, 5)))
+
+    return answer
 
 
 def laplaceianExpand(lap_pyr: List[np.ndarray]) -> np.ndarray:
@@ -270,7 +370,15 @@ def laplaceianExpand(lap_pyr: List[np.ndarray]) -> np.ndarray:
     :param lap_pyr: Laplacian Pyramid
     :return: Original image
     """
-    pass
+    # add last image to answer
+    answer = lap_pyr[-1]
+
+    # add images to answer
+    for img in range(len(lap_pyr) - 1, 0, -1):
+        answer = cv2.pyrUp(answer)
+        answer = answer + lap_pyr[img - 1]
+
+    return answer
 
 
 def pyrBlend(img_1: np.ndarray, img_2: np.ndarray,
@@ -283,5 +391,25 @@ def pyrBlend(img_1: np.ndarray, img_2: np.ndarray,
     :param levels: Pyramid depth
     :return: (Naive blend, Blended Image)
     """
-    pass
+    # find blended image
+    lapA = laplaceianReduce(img_1, levels)
+    lapB = laplaceianReduce(img_2, levels)
+    gaussPyr = gaussianPyr(mask, levels)
+
+    # create answer array
+    lapC = []
+
+    # for every level in the pyramids
+    for k in range(levels):
+        img = gaussPyr[k] * lapA[k] + (1 - gaussPyr[k]) * lapB[k]
+        lapC.append(img)
+
+    # Reconstruct all levels to get blended image
+    blended = laplaceianExpand(lapC)
+    blended = np.resize(blended, [679, 1023, 3])
+
+    # find naive blend
+    naive = img_1 * mask + img_2 * (1 - mask)
+
+    return np.array(naive), np.array(blended)
 

@@ -1,3 +1,5 @@
+import cv2
+
 from ex3_utils import *
 import time
 
@@ -14,7 +16,7 @@ def lkDemo(img_path):
     img_1 = cv2.resize(img_1, (0, 0), fx=.5, fy=0.5)
     t = np.array([[1, 0, -.2],
                   [0, 1, -.1],
-                  [0, 0, 1]], dtype=np.float64)
+                  [0, 0, 1]], dtype=np.float)
     img_2 = cv2.warpPerspective(img_1, t, img_1.shape[::-1])
 
     # -------- If you want to see the 2 images side by side -------------
@@ -27,7 +29,7 @@ def lkDemo(img_path):
     # -------------------------------------------------------------------
 
     st = time.time()
-    pts, uv = opticalFlow(img_1.astype(np.float64), img_2.astype(np.float64), step_size=20, win_size=5)
+    pts, uv = opticalFlow(img_1.astype(np.float), img_2.astype(np.float), step_size=20, win_size=5)
     et = time.time()
 
     print("Time: {:.4f}".format(et - st))
@@ -52,7 +54,7 @@ def hierarchicalkDemo(img_path):
     img_2 = cv2.warpPerspective(src=img_1, M=t, dsize=img_1.shape[::-1])
 
     st = time.time()
-    uv_hierarchical = opticalFlowPyrLK(img_1, img_2, k=3, stepSize=20, winSize=5)
+    uv_hierarchical = opticalFlowPyrLK(img_1, img_2, k=3, stepSize=20, winSize=50)
     et = time.time()
 
     pts = np.array([])
@@ -111,9 +113,23 @@ def imageWarpingDemo(img_path):
     :return:
     """
     print("Image Warping Demo")
+    img_path = cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2GRAY)
+    img_path = cv2.resize(img_path, (0, 0), fx=.5, fy=0.5)
+    t = np.array([[0.3, 0, 0],
+                  [0, 0.3, 0],
+                  [0, 0, 1]], dtype=np.float)
+    img_2 = cv2.warpPerspective(img_path, t, img_path.shape[::-1])
+    my_function = warpImages(img_path, img_2, t)
 
-    pass
-
+    f, ax = plt.subplots(1, 3)
+    ax[0].imshow(img_path)
+    ax[0].set_title('Original image')
+    ax[1].imshow(img_2)
+    ax[1].set_title('Warped image')
+    ax[2].imshow(my_function)
+    ax[2].set_title('Inverse warp')
+    plt.show()
+    cv2.waitKey(0)
 
 # ---------------------------------------------------------------------------
 # --------------------- Gaussian and Laplacian Pyramids ---------------------
@@ -190,13 +206,13 @@ def main():
     img_path = 'input/boxMan.jpg'
     # lkDemo(img_path)
     # hierarchicalkDemo(img_path)
-    # compareLK(img_path)
-    #
-    imageWarpingDemo(img_path)
-    #
-    # pyrGaussianDemo('input/pyr_bit.jpg')
-    # pyrLaplacianDemo('input/pyr_bit.jpg')
-    # blendDemo()
+    compareLK(img_path)
+
+    # imageWarpingDemo(img_path)
+
+    pyrGaussianDemo('input/pyr_bit.jpg')
+    pyrLaplacianDemo('input/pyr_bit.jpg')
+    blendDemo()
 
 
 if __name__ == '__main__':
